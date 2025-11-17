@@ -3,3 +3,4 @@
 .env
 scraped_content.md
 __pycache__/
+vector_db/

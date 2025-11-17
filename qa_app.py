@@ -1,7 +1,7 @@
 import sys
 from langchain_community.vectorstores import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_ollama import Ollama
+from langchain_community.llms import Ollama
 
 VECTOR_STORE_PATH = "vector_db"
 EMBEDDING_MODEL = "all-MiniLM-L6-v2"
@@ -61,13 +61,15 @@ def answer_question(user_question):
 
     print("\n--- Sending to Local LLM (Ollama) ---")
     
-    local_llm = Ollama(model="gemma2")
+    local_llm = Ollama(model="llama3")
     
     llm_answer_text = local_llm.invoke(grounded_prompt)
 
     print("\n--- Answer ---")
     print(llm_answer_text)
     print("--------------\n")
+
+    return llm_answer_text
 
 if __name__ == "__main__":
     if len(sys.argv) > 1:

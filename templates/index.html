@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-gray-900">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Local RAG Scraper</title>
+    <!-- 1. Load Tailwind CSS for easy styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                },
+            }
+        }
+    </script>
+</head>
+<body class="h-full flex items-center justify-center p-4 bg-gray-900 text-gray-100 font-sans">
+
+    <div class="w-full max-w-2xl bg-gray-800 rounded-lg shadow-xl p-6 space-y-8">
+        
+        <!-- === SECTION 1: SCRAPING === -->
+        <div class="space-y-4">
+            <h1 class="text-2xl font-bold text-center text-white">Local RAG App</h1>
+            <p class="text-sm text-gray-400 text-center">
+                Step 1: Scrape a website to create your local knowledge base.
+            </p>
+            
+            <!-- This 'form' won't submit traditionally. We'll intercept it with JS. -->
+            <form id="scrape-form" class="flex flex-col sm:flex-row gap-3">
+                <input 
+                    type="text" 
+                    id="url-input" 
+                    placeholder="Enter a full URL (e.g., https://...)" 
+                    class="flex-1 p-3 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    required
+                >
+                <button 
+                    type="submit" 
+                    id="scrape-button"
+                    class="px-5 py-3 bg-blue-600 text-white font-semibold rounded-md hover:bg-blue-700 transition-colors duration-200 disabled:bg-gray-500 disabled:cursor-not-allowed"
+                >
+                    <!-- This 'span' is for the button text -->
+                    <span id="scrape-button-text">Scrape & Index</span>
+                    <!-- This 'div' is a hidden loading spinner -->
+                    <div id="scrape-loader" class="hidden w-5 h-5 border-2 border-t-transparent border-white rounded-full animate-spin mx-auto"></div>
+                </button>
+            </form>
+            <p id="scrape-status" class="text-center text-green-400 h-5"></p>
+        </div>
+
+        <hr class="border-gray-700" />
+
+        <!-- === SECTION 2: Q&A === -->
+        <div class="space-y-4">
+            <h2 class="text-xl font-semibold text-center text-white">Step 2: Ask a Question</h2>
+            
+            <!-- This 'div' is where the chat messages will appear -->
+            <div id="chat-window" class="h-64 p-4 bg-gray-900 rounded-md border border-gray-700 overflow-y-auto space-y-3">
+                <!-- Messages will be added here by JavaScript -->
+                <div class="text-gray-400">Your conversation will appear here...</div>
+            </div>
+
+            <!-- This is the form for asking a question -->
+            <form id="ask-form" class="flex gap-3">
+                <input 
+                    type="text" 
+                    id="question-input" 
+                    placeholder="Ask a question about the scraped content..." 
+                    class="flex-1 p-3 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    required
+                >
+                <button 
+                    type="submit" 
+                    id="ask-button"
+                    class="px-5 py-3 bg-green-600 text-white font-semibold rounded-md hover:bg-green-700 transition-colors duration-200 disabled:bg-gray-500 disabled:cursor-not-allowed"
+                >
+                    <!-- Button text -->
+                    <span id="ask-button-text">Ask</span>
+                    <!-- Loading spinner -->
+                    <div id="ask-loader" class="hidden w-5 h-5 border-2 border-t-transparent border-white rounded-full animate-spin mx-auto"></div>
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- === JAVASCRIPT LOGIC === -->
+    <!-- This is the "frontend" logic that talks to your Python "backend" -->
+    <script>
+        // Get references to all our important HTML elements
+        const scrapeForm = document.getElementById('scrape-form');
+        const urlInput = document.getElementById('url-input');
+        const scrapeButton = document.getElementById('scrape-button');
+        const scrapeButtonText = document.getElementById('scrape-button-text');
+        const scrapeLoader = document.getElementById('scrape-loader');
+        const scrapeStatus = document.getElementById('scrape-status');
+
+        const askForm = document.getElementById('ask-form');
+        const questionInput = document.getElementById('question-input');
+        const askButton = document.getElementById('ask-button');
+        const askButtonText = document.getElementById('ask-button-text');
+        const askLoader = document.getElementById('ask-loader');
+        const chatWindow = document.getElementById('chat-window');
+
+        // Clear the chat window on page load
+        chatWindow.innerHTML = '';
+
+        // --- Handle the Scrape & Index action ---
+        scrapeForm.addEventListener('submit', async (e) => {
+            e.preventDefault(); // Stop the form from refreshing the page
+            
+            const url = urlInput.value;
+            if (!url) return;
+
+            // --- UI: Show loading state ---
+            scrapeStatus.textContent = 'Scraping and indexing... this may take a moment.';
+            scrapeButton.disabled = true;
+            scrapeButtonText.classList.add('hidden');
+            scrapeLoader.classList.remove('hidden');
+
+            try {
+                // --- What is `fetch`? ---
+                // This is the "frontend" talking to the "backend".
+                // We send a POST request to our '/scrape' route (in app.py)
+                const response = await fetch('/scrape', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json', // Tell the server we're sending JSON
+                    },
+                    // `JSON.stringify` converts a JavaScript object to a JSON string
+                    body: JSON.stringify({ url: url }),
+                });
+
+                const result = await response.json(); // Read the JSON response from the server
+
+                if (!response.ok) {
+                    // If the server sent an error (like 500), throw an error
+                    throw new Error(result.error || 'Unknown error occurred');
+                }
+                
+                // --- UI: Show success ---
+                scrapeStatus.textContent = result.message; // Show success message from server
+                urlInput.value = ''; // Clear the input
+
+            } catch (error) {
+                // --- UI: Show error ---
+                scrapeStatus.textContent = `Error: ${error.message}`;
+                scrapeStatus.classList.remove('text-green-400');
+                scrapeStatus.classList.add('text-red-400');
+            } finally {
+                // --- UI: Reset button ---
+                // This 'finally' block runs whether it succeeded or failed
+                scrapeButton.disabled = false;
+                scrapeButtonText.classList.remove('hidden');
+                scrapeLoader.classList.add('hidden');
+            }
+        });
+
+        // --- Handle the Ask Question action ---
+        askForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const question = questionInput.value;
+            if (!question) return;
+
+            // --- UI: Add user's question to chat ---
+            addMessageToChat(question, 'user');
+            questionInput.value = ''; // Clear the input
+
+            // --- UI: Show loading state ---
+            askButton.disabled = true;
+            askButtonText.classList.add('hidden');
+            askLoader.classList.remove('hidden');
+
+            try {
+                // --- Talk to the backend! ---
+                // Send a POST request to our '/ask' route (in app.py)
+                const response = await fetch('/ask', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ question: question }),
+                });
+
+                const result = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(result.error || 'Unknown error occurred');
+                }
+                
+                // --- UI: Add bot's answer to chat ---
+                addMessageToChat(result.answer, 'bot');
+
+            } catch (error) {
+                // --- UI: Add error message to chat ---
+                addMessageToChat(`Error: ${error.message}`, 'bot');
+            } finally {
+                // --- UI: Reset button ---
+                askButton.disabled = false;
+                askButtonText.classList.remove('hidden');
+                askLoader.classList.add('hidden');
+            }
+        });
+
+        // --- Helper function to add messages to the chat window ---
+        function addMessageToChat(text, sender) {
+            const messageDiv = document.createElement('div');
+            let bgColor = 'bg-blue-600'; // Bot color
+            let align = 'self-start';     // Bot alignment
+
+            if (sender === 'user') {
+                bgColor = 'bg-gray-600';  // User color
+                align = 'self-end';       // User alignment
+            }
+            
+            // Use Tailwind classes to style the new message
+            messageDiv.className = `p-3 rounded-lg max-w-xs ${bgColor} ${align}`;
+            
+            // We use .innerText to safely add the text, preventing HTML injection
+            messageDiv.innerText = text; 
+            
+            chatWindow.appendChild(messageDiv);
+            
+            // Auto-scroll to the bottom
+            chatWindow.scrollTop = chatWindow.scrollHeight;
+        }
+    </script>
+</body>
+</html>
