@@ -1,4 +1,4 @@
-````md
+
 # LocalRAG — Your Personal AI Knowledge Base
 
 LocalRAG is a full-stack web application that transforms any website into a private, conversational AI knowledge base. You enter a URL, it scrapes the content, embeds it locally, and lets you chat with that content using a locally-run Large Language Model.
@@ -53,7 +53,7 @@ LocalRAG is a self-contained Retrieval-Augmented Generation (RAG) system that ru
 
 ```bash
 ollama pull llama3
-````
+```
 
 ### 2. Clone the Repository
 
@@ -140,5 +140,3 @@ LocalRAG/
 * Streaming model responses
 * PDF and text file uploads
 
-```
-```
