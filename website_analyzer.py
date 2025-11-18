@@ -26,7 +26,7 @@ ANALYSIS_PROMPT_TEMPLATE = """
 You are an analytical assistant. Based *only* on the context provided, answer the user's question.
 Return your response as a single, valid JSON object with two keys: "answer" and "confidence".
 - The "answer" key should contain your text answer.
-- The "confidence" key should be a number from 0 (no information) to 100 (perfect information) representing how well the context answered the question.
+- The "confidence" key should be a number from 0 (no information) to 10 (perfect information) representing how well the context answered the question.
 
 If the context is irrelevant or provides no information to answer the question, set "answer" to "I could not find an answer in the provided document." and "confidence" to 0.
 

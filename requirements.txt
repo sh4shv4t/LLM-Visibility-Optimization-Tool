@@ -1,0 +1,11 @@
+Flask
+playwright
+beautifulsoup4
+markdownify
+langchain-community
+langchain-huggingface
+langchain-text-splitters
+langchain-ollama
+chromadb
+sentence-transformers
+unstructured[md]
