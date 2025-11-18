@@ -25,7 +25,7 @@
         
         <!-- === SECTION 1: SCRAPING === -->
         <div class="space-y-4">
-            <h1 class="text-2xl font-bold text-center text-white">Local RAG App</h1>
+            <h1 class="text-2xl font-bold text-center text-white">LLM Optimization Tool</h1>
             <p class="text-sm text-gray-400 text-center">
                 Step 1: Scrape a website to create your local knowledge base.
             </p>
@@ -238,100 +238,215 @@
             }
         });
 
-        // --- NEW: Handle the Analyze Scrape action ---
+        // --- NEW: Handle the Analyze Scrape action with SSE ---
         analyzeButton.addEventListener('click', async () => {
             // --- UI: Show loading state ---
-            analysisResults.classList.add('hidden');
-            analysisResults.innerHTML = ''; // Clear old results
+            analysisResults.classList.remove('hidden');
+            analysisResults.innerHTML = '<div id="progress-log" class="text-sm font-mono space-y-1"></div>';
             analyzeButton.disabled = true;
-            analyzeButtonText.classList.add('hidden');
-            analyzeLoader.classList.remove('hidden');
+            analyzeButtonText.textContent = 'Analyzing...';
+            analyzeButtonText.classList.remove('hidden');
+            analyzeLoader.classList.add('hidden');
+
+            const progressLog = document.getElementById('progress-log');
 
             try {
-                // --- Talk to the backend! ---
-                // Send a POST request to our new '/analyze' route
-                const response = await fetch('/analyze', {
+                // Start the analysis
+                const startResponse = await fetch('/analyze', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                 });
 
-                const report = await response.json();
-
-                if (!response.ok) {
-                    throw new Error(report.error || 'Unknown error occurred');
+                if (!startResponse.ok) {
+                    const error = await startResponse.json();
+                    throw new Error(error.error || 'Failed to start analysis');
                 }
+
+                // Connect to SSE stream for progress updates
+                const eventSource = new EventSource('/analyze/stream');
                 
-                // --- UI: Render the report ---
-                displayAnalysisReport(report);
+                eventSource.onmessage = (event) => {
+                    const msg = JSON.parse(event.data);
+                    
+                    // Display progress message
+                    if (msg.message && msg.message !== 'COMPLETE' && msg.message !== 'ERROR') {
+                        const progressLine = document.createElement('div');
+                        progressLine.className = 'text-gray-300';
+                        progressLine.textContent = msg.message;
+                        progressLog.appendChild(progressLine);
+                        progressLog.scrollTop = progressLog.scrollHeight;
+                    }
+                    
+                    // Handle completion
+                    if (msg.message === 'COMPLETE') {
+                        eventSource.close();
+                        
+                        // Add completion banner to progress log
+                        const completionBanner = document.createElement('div');
+                        completionBanner.className = 'mt-4 p-4 bg-green-900 bg-opacity-30 border-2 border-green-500 rounded-lg';
+                        completionBanner.innerHTML = `
+                            <div class="text-center">
+                                <div class="text-2xl mb-2">🎉</div>
+                                <div class="text-lg font-bold text-green-400">Analysis Complete!</div>
+                                <div class="text-sm text-gray-300 mt-2">Overall GEO Score: <span class="font-bold">${msg.data.report.overall_geo_score}/100</span></div>
+                                <div class="text-sm text-gray-300">Answer Rate: <span class="font-bold">${(msg.data.report.statistics.answer_rate * 100).toFixed(1)}%</span></div>
+                                <div class="text-xs text-gray-400 mt-1">${msg.data.report.rating_description || ''}</div>
+                            </div>
+                        `;
+                        progressLog.appendChild(completionBanner);
+                        progressLog.scrollTop = progressLog.scrollHeight;
+                        
+                        // Display full report below
+                        displayAnalysisReport(msg.data.report);
+                        analyzeButton.disabled = false;
+                        analyzeButtonText.textContent = 'Run Scrape Analysis';
+                    }
+                    
+                    // Handle error
+                    if (msg.message === 'ERROR') {
+                        eventSource.close();
+                        const errorDiv = document.createElement('div');
+                        errorDiv.className = 'text-red-400 mt-2';
+                        errorDiv.textContent = `Error: ${msg.data.error}`;
+                        progressLog.appendChild(errorDiv);
+                        analyzeButton.disabled = false;
+                        analyzeButtonText.textContent = 'Run Scrape Analysis';
+                    }
+                };
+
+                eventSource.onerror = (error) => {
+                    console.error('SSE Error:', error);
+                    eventSource.close();
+                    const errorDiv = document.createElement('div');
+                    errorDiv.className = 'text-red-400 mt-2';
+                    errorDiv.textContent = 'Connection error. Please try again.';
+                    progressLog.appendChild(errorDiv);
+                    analyzeButton.disabled = false;
+                    analyzeButtonText.textContent = 'Run Scrape Analysis';
+                };
 
             } catch (error) {
-                // --- UI: Add error message to chat ---
                 displayAnalysisReport({ error: error.message });
-            } finally {
-                // --- UI: Reset button ---
                 analyzeButton.disabled = false;
-                analyzeButtonText.classList.remove('hidden');
-                analyzeLoader.classList.add('hidden');
+                analyzeButtonText.textContent = 'Run Scrape Analysis';
             }
         });
 
-        // --- NEW: Helper function to display the analysis report ---
+        // --- NEW: Helper function to display the comprehensive analysis report ---
         function displayAnalysisReport(report) {
-            analysisResults.classList.remove('hidden'); // Show the results container
-            
             if (report.error) {
-                analysisResults.innerHTML = `<p class="text-red-400">Error: ${report.error}</p>`;
+                const errorHTML = `<p class="text-red-400">Error: ${report.error}</p>`;
+                analysisResults.innerHTML += errorHTML;
                 return;
             }
 
-            let reportHTML = '';
+            // Add separator before detailed report
+            let reportHTML = `
+                <div class="my-6 border-t-2 border-gray-700"></div>
+                <h2 class="text-2xl font-bold text-white mb-4">📊 Detailed Analysis Report</h2>
+                <div class="space-y-6">
+            `;
 
-            // 1. Add Overall Scores
-            if (report.overall_scores) {
-                const retrievalScore = report.overall_scores.avg_retrieval_confidence.toFixed(2);
-                const llmScore = report.overall_scores.avg_llm_confidence.toFixed(2);
+            // 1. Overall GEO Score (prominent display)
+            if (report.overall_geo_score !== undefined) {
+                const score = report.overall_geo_score;
+                const rating = report.rating || 'N/A';
+                let scoreColor = 'text-red-400';
+                if (score >= 75) scoreColor = 'text-green-400';
+                else if (score >= 50) scoreColor = 'text-yellow-400';
+                else if (score >= 25) scoreColor = 'text-orange-400';
                 
                 reportHTML += `
-                    <h3 class="text-lg font-semibold text-white mb-2">Overall Content Score</h3>
-                    <div class="grid grid-cols-2 gap-4 mb-4">
-                        <div class="p-3 bg-gray-800 rounded-lg">
-                            <div class="text-sm text-gray-400">Avg. Retrieval Confidence</div>
-                            <div class="text-2xl font-bold text-green-400">${retrievalScore}%</div>
-                        </div>
-                        <div class="p-3 bg-gray-800 rounded-lg">
-                            <div class="text-sm text-gray-400">Avg. LLM Confidence</div>
-                            <div class="text-2xl font-bold text-blue-400">${llmScore} / 10</div>
-                        </div>
+                    <div class="text-center p-6 bg-gradient-to-br from-gray-800 to-gray-900 rounded-lg border border-gray-700">
+                        <div class="text-sm text-gray-400 uppercase tracking-wide mb-2">Overall GEO Score</div>
+                        <div class="${scoreColor} text-6xl font-bold mb-2">${score}<span class="text-3xl">/100</span></div>
+                        <div class="text-xl text-gray-300 uppercase tracking-wider">${rating}</div>
+                        ${report.rating_description ? `<p class="text-sm text-gray-400 mt-2">${report.rating_description}</p>` : ''}
                     </div>
-                    <hr class="border-gray-700 my-3" />
-                    <h3 class="text-lg font-semibold text-white mb-2">Individual Question Scores</h3>
                 `;
             }
 
-            // 2. Add Individual Scores
-            if (report.individual_scores && report.individual_scores.length > 0) {
-                reportHTML += '<div class="space-y-4">';
-                report.individual_scores.forEach(item => {
-                    const retrievalConf = item.retrieval_confidence.toFixed(2);
-                    const llmConf = item.llm_confidence;
+            // 2. Statistics
+            if (report.statistics) {
+                const stats = report.statistics;
+                const answerRate = ((stats.answer_rate || 0) * 100).toFixed(1);
+                
+                reportHTML += `
+                    <div class="grid grid-cols-2 gap-4">
+                        <div class="p-4 bg-gray-800 rounded-lg">
+                            <div class="text-sm text-gray-400">Answer Rate</div>
+                            <div class="text-2xl font-bold text-blue-400">${answerRate}%</div>
+                            <div class="text-xs text-gray-500">${stats.answered_questions}/${stats.total_questions} questions</div>
+                        </div>
+                        <div class="p-4 bg-gray-800 rounded-lg">
+                            <div class="text-sm text-gray-400">Avg LLM Confidence</div>
+                            <div class="text-2xl font-bold text-green-400">${stats.avg_llm_confidence.toFixed(1)}<span class="text-sm">/10</span></div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            // 3. Dimension Scores
+            if (report.dimension_scores) {
+                reportHTML += `
+                    <div>
+                        <h3 class="text-lg font-semibold text-white mb-3">Dimension Breakdown</h3>
+                        <div class="space-y-2">
+                `;
+                
+                for (const [dimension, score] of Object.entries(report.dimension_scores)) {
+                    const percentage = Math.min(100, Math.max(0, score));
+                    let barColor = 'bg-red-500';
+                    if (percentage >= 75) barColor = 'bg-green-500';
+                    else if (percentage >= 50) barColor = 'bg-yellow-500';
+                    else if (percentage >= 25) barColor = 'bg-orange-500';
                     
                     reportHTML += `
-                        <div class="p-3 bg-gray-800 rounded-lg">
-                            <p class="font-semibold text-gray-200">${item.question}</p>
-                            <p class="text-sm text-gray-300 mt-2"><span class="font-bold">Answer:</span> ${item.llm_answer}</p>
-                            <div class="flex justify-end gap-4 mt-2 text-sm">
-                                <span class="text-green-400">Retrieval: ${retrievalConf}%</span>
-                                <span class="text-blue-400">LLM: ${llmConf}/10</span>
+                        <div>
+                            <div class="flex justify-between text-sm mb-1">
+                                <span class="text-gray-300 capitalize">${dimension}</span>
+                                <span class="text-gray-400">${score.toFixed(1)}/100</span>
+                            </div>
+                            <div class="w-full bg-gray-700 rounded-full h-2">
+                                <div class="${barColor} h-2 rounded-full transition-all duration-500" style="width: ${percentage}%"></div>
                             </div>
                         </div>
                     `;
-                });
-                reportHTML += '</div>';
-            } else {
-                reportHTML += '<p class="text-gray-400">No individual question results found.</p>';
+                }
+                
+                reportHTML += '</div></div>';
             }
 
-            analysisResults.innerHTML = reportHTML;
+            // 4. Top Recommendations
+            if (report.recommendations) {
+                const recs = report.recommendations;
+                if (recs.critical && recs.critical.length > 0) {
+                    reportHTML += `
+                        <div class="bg-red-900 bg-opacity-20 border border-red-700 rounded-lg p-4">
+                            <h3 class="text-lg font-semibold text-red-400 mb-2">🚨 Critical Improvements</h3>
+                            <ul class="list-disc list-inside space-y-1 text-sm text-gray-300">
+                    `;
+                    recs.critical.slice(0, 5).forEach(rec => {
+                        reportHTML += `<li>${rec}</li>`;
+                    });
+                    reportHTML += '</ul></div>';
+                }
+                
+                if (recs.important && recs.important.length > 0) {
+                    reportHTML += `
+                        <div class="bg-yellow-900 bg-opacity-20 border border-yellow-700 rounded-lg p-4">
+                            <h3 class="text-lg font-semibold text-yellow-400 mb-2">⚠️ Important Improvements</h3>
+                            <ul class="list-disc list-inside space-y-1 text-sm text-gray-300">
+                    `;
+                    recs.important.slice(0, 5).forEach(rec => {
+                        reportHTML += `<li>${rec}</li>`;
+                    });
+                    reportHTML += '</ul></div>';
+                }
+            }
+
+            reportHTML += '</div></div>';
+            analysisResults.innerHTML += reportHTML;
         }
 
 

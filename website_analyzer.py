@@ -1,14 +1,14 @@
 import sys
 import json
-from langchain_community.vectorstores import Chroma
+from langchain_chroma import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_community.llms import Ollama
+from langchain_ollama import OllamaLLM
 
 # --- Configuration (Must match vector_store.py) ---
 VECTOR_STORE_PATH = "vector_db"
 EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 # Use the same local model as your qa_app.py
-OLLAMA_MODEL = "llama3" 
+OLLAMA_MODEL = "gpt-oss:20b" 
 
 # --- Standard Questions for Analysis ---
 STANDARD_QUESTIONS = [
@@ -56,9 +56,10 @@ def analyze_scrape_quality():
         )
         
         print(f"Loading local LLM: '{OLLAMA_MODEL}'...")
-        local_llm = Ollama(
-            model=OLLAMA_MODEL, 
-            format="json"  # We explicitly tell Ollama to expect and generate JSON
+        local_llm = OllamaLLM(
+            model=OLLAMA_MODEL,
+            format="json",  # We explicitly tell Ollama to expect and generate JSON
+            temperature=0.1  # Lower temperature for more consistent JSON output
         )
 
     except Exception as e:
@@ -110,17 +111,30 @@ def analyze_scrape_quality():
                 llm_response_raw = local_llm.invoke(grounded_prompt)
                 
                 # --- 4. Parse LLM Response ---
-                llm_response_json = json.loads(llm_response_raw)
-                llm_answer = llm_response_json.get("answer", "Error parsing response.")
-                llm_confidence = float(llm_response_json.get("confidence", 0))
+                if not llm_response_raw or llm_response_raw.strip() == "":
+                    print("Warning: LLM returned empty response.")
+                    llm_answer = "Error: LLM returned empty response."
+                    llm_confidence = 0
+                else:
+                    # Try to extract JSON if wrapped in markdown code blocks
+                    response_text = llm_response_raw.strip()
+                    if response_text.startswith("```"):
+                        # Extract content between code blocks
+                        lines = response_text.split('\n')
+                        response_text = '\n'.join(lines[1:-1]) if len(lines) > 2 else response_text
+                    
+                    llm_response_json = json.loads(response_text)
+                    llm_answer = llm_response_json.get("answer", "Error parsing response.")
+                    llm_confidence = float(llm_response_json.get("confidence", 0))
 
         except json.JSONDecodeError as json_err:
             print(f"Error: LLM did not return valid JSON. {json_err}")
-            llm_answer = f"Error: LLM returned invalid JSON. Raw: {llm_response_raw}"
+            print(f"Raw response: {llm_response_raw[:200] if llm_response_raw else 'None'}")
+            llm_answer = "Error: LLM returned invalid JSON format."
             llm_confidence = 0
         except Exception as e:
             print(f"An error occurred during analysis: {e}")
-            llm_answer = f"An error occurred: {e}"
+            llm_answer = f"An error occurred: {str(e)[:100]}"
             llm_confidence = 0
 
         # Add to totals
