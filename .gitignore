@@ -3,4 +3,3 @@
 .env
 __pycache__/
 vector_db/
-./scraped_content.md

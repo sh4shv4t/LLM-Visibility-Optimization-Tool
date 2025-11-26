@@ -61,7 +61,7 @@ def answer_question(user_question):
 
     print("\n--- Sending to Local LLM (Ollama) ---")
     
-    local_llm = Ollama(model="llama3")
+    local_llm = Ollama(model="gpt-oss:20b")
     
     llm_answer_text = local_llm.invoke(grounded_prompt)
 
